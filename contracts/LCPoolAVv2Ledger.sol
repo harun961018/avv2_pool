@@ -6,7 +6,7 @@ import "./interfaces/IFeeTierStrate.sol";
 import "./utils/Ownable.sol";
 import "./interfaces/IERC20.sol";
 
-contract LCPoolAVv3Ledger is Ownable {
+contract LCPoolAVv2Ledger is Ownable {
 
   address public feeStrate;
 

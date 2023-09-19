@@ -6,13 +6,13 @@ import "hardhat/console.sol";
 import "./interfaces/IWETH.sol";
 import "./interfaces/ISwapPlusv1.sol";
 import "./interfaces/IFeeTierStrate.sol";
-import "./interfaces/ILCPoolAVv3Ledger.sol";//should be changed
-import "./interfaces/IPool.sol";
+import "./interfaces/ILCPoolAVv2Ledger.sol";//should be changed
+import "./interfaces/ILendingPool.sol";
 import {DataTypes} from './utils/DataTypes.sol';
 import "./utils/Ownable.sol";
 import "./utils/SafeERC20.sol";
  
-contract LCPoolAVv3 is Ownable {
+contract LCPoolAVv2 is Ownable {
   using SafeERC20 for IERC20;
   address public WETH;
   address public swapRouter;
@@ -99,7 +99,7 @@ contract LCPoolAVv3 is Ownable {
     (dpvar[1], dpvar[0], dpvar[2], ,) = _reinvest(info, false);
     dpvar[3] = _distributeFee(info.basketId, (info.token==address(0)?WETH:info.token), dpvar[3], 1);
     (uint16 poolId, uint256 liquidity) = _deposit(info, dpvar[3], paths);
-    ILCPoolAVv3Ledger(ledger).updateInfo(info.account, poolId, info.basketId, liquidity, dpvar[0], dpvar[2], dpvar[1], true);
+    ILCPoolAVv2Ledger(ledger).updateInfo(info.account, poolId, info.basketId, liquidity, dpvar[0], dpvar[2], dpvar[1], true);
     return (poolId, liquidity);
   }
 
@@ -127,7 +127,7 @@ contract LCPoolAVv3 is Ownable {
     }
     // return tokenId, withdraw liquidity amount, receive token amount
     (wvar[3], wvar[7], wvar[4]) = _withdraw(info, wvar[5], paths);
-    ILCPoolAVv3Ledger(ledger).updateInfo(info.account, uint16(wvar[3]), info.basketId, wvar[7], wvar[0], wvar[2], wvar[1], false);
+    ILCPoolAVv2Ledger(ledger).updateInfo(info.account, uint16(wvar[3]), info.basketId, wvar[7], wvar[0], wvar[2], wvar[1], false);
 
     wvar[4] = _distributeFee(info.basketId, isCoin?WETH:info.token, wvar[4], 0);
 
@@ -173,23 +173,23 @@ contract LCPoolAVv3 is Ownable {
     bool claimReward
   ) internal returns(uint256, uint256, uint256, uint256, uint256) {
     uint256[] memory rvar = new uint256[](7);
-    uint16 poolId = ILCPoolAVv3Ledger(ledger).poolToId(info.pair[0], info.pair[1]);
+    uint16 poolId = ILCPoolAVv2Ledger(ledger).poolToId(info.pair[0], info.pair[1]);
     rvar[0] = 0; //reward
     rvar[1] = 0; // extraLp
     rvar[3] = 0; // claim extra lp
     rvar[4] = 0; // claim reward amount
     if (poolId != 0) {
       rvar[5] = IERC20(info.pair[1]).balanceOf(address(this));
-      rvar[6] = ILCPoolAVv3Ledger(ledger).getTVLAmount(poolId);
+      rvar[6] = ILCPoolAVv2Ledger(ledger).getTVLAmount(poolId);
       if (rvar[5] > rvar[6]) {
         rvar[5] = rvar[5] - rvar[6];
         rvar[0] =_decreaseLiquidity(info.pair[0], rvar[5]);
       }
     }
     if (claimReward && poolId != 0) {
-      (rvar[3], rvar[4]) = ILCPoolAVv3Ledger(ledger).getSingleReward(info.account, poolId, info.basketId, rvar[0], false);
+      (rvar[3], rvar[4]) = ILCPoolAVv2Ledger(ledger).getSingleReward(info.account, poolId, info.basketId, rvar[0], false);
     }
-    rvar[0] += ILCPoolAVv3Ledger(ledger).getLastRewardAmount(poolId);
+    rvar[0] += ILCPoolAVv2Ledger(ledger).getLastRewardAmount(poolId);
     rvar[0] = _distributeFee(info.basketId, info.pair[0], rvar[0], 2);
     rvar[0] = rvar[0] >= rvar[4] ? rvar[0] - rvar[4] : 0;
     rvar[2] = rvar[0]; // reserveReward need to check
@@ -207,13 +207,13 @@ contract LCPoolAVv3 is Ownable {
     ISwapPlusv1.swapBlock[] calldata paths
   ) internal returns(uint16, uint256) {
     uint256 amountToSupply = _depositSwap(info.token, iAmount, info.pair, paths);
-    uint16 poolId = ILCPoolAVv3Ledger(ledger).poolToId(info.pair[0], info.pair[1]); // poolId
+    uint16 poolId = ILCPoolAVv2Ledger(ledger).poolToId(info.pair[0], info.pair[1]); // poolId
     if (poolId == 0) {
 
-      DataTypes.ReserveData memory reserveData = IPool(aavePool).getReserveData(info.pair[0]);
+      DataTypes.ReserveData memory reserveData = ILendingPool(aavePool).getReserveData(info.pair[0]);
       poolId = reserveData.id;
       poolId += 1;
-      ILCPoolAVv3Ledger(ledger).setPoolToId(info.pair[0], info.pair[1], poolId); 
+      ILCPoolAVv2Ledger(ledger).setPoolToId(info.pair[0], info.pair[1], poolId); 
     }
     amountToSupply = _increaseLiquidity(info.pair[0], amountToSupply);
     // _refundReserveToken(info.account, info.pair[0], info.pair[1], amount0-amount[0], amount1-amount[1]);
@@ -228,10 +228,10 @@ contract LCPoolAVv3 is Ownable {
     uint256 addedaTokenAmount = IERC20(token).balanceOf(address(this));
     if (addedaTokenAmount > amountToAdd) {
       _approveTokenIfNeeded(token, aavePool, amountToAdd);
-      IPool(aavePool).supply(token, amountToAdd, address(this), 0);
+      ILendingPool(aavePool).deposit(token, amountToAdd, address(this), 0);
     } else {
       _approveTokenIfNeeded(token, aavePool, addedaTokenAmount);
-      IPool(aavePool).supply(token, addedaTokenAmount, address(this), 0);
+      ILendingPool(aavePool).deposit(token, addedaTokenAmount, address(this), 0);
     }
 
     addedaTokenAmount -= IERC20(token).balanceOf(address(this));
@@ -265,13 +265,13 @@ contract LCPoolAVv3 is Ownable {
     uint256 extraLp,
     ISwapPlusv1.swapBlock[] memory paths
   ) internal returns(uint256, uint256, uint256) {
-    uint16 poolId = ILCPoolAVv3Ledger(ledger).poolToId(info.pair[0], info.pair[1]);
+    uint16 poolId = ILCPoolAVv2Ledger(ledger).poolToId(info.pair[0], info.pair[1]);
     if (poolId == 0) {
       return (0, 0, 0);
     }
     else {
       uint256 withdrawAmount = info.amount;
-      uint256 userLiquidity = ILCPoolAVv3Ledger(ledger).getUserLiquidity(info.account, poolId, info.basketId);
+      uint256 userLiquidity = ILCPoolAVv2Ledger(ledger).getUserLiquidity(info.account, poolId, info.basketId);
       if (userLiquidity < withdrawAmount) {
         withdrawAmount = userLiquidity;
       }
@@ -298,7 +298,7 @@ contract LCPoolAVv3 is Ownable {
     uint256 liquidity
   ) internal returns (uint256) {
     uint256 amount;
-    amount = IPool(aavePool).withdraw(token, liquidity, address(this));
+    amount = ILendingPool(aavePool).withdraw(token, liquidity, address(this));
     return amount;
   }
 

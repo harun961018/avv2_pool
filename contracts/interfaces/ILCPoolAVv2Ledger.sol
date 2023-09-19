@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
-interface ILCPoolAVv3Ledger {
+interface ILCPoolAVv2Ledger {
   // token0 -> token1 -> fee -> poolId
   function poolToId(address token0, address token1) external view returns(uint16);
   function getTVLAmount(uint16 poolId) external view returns(uint256);
